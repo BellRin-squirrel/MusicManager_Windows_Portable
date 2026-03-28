@@ -1,22 +1,24 @@
 (async function() {
-    // --- グローバルUI保護設定 ---
-    
-    // 全画面での右クリックメニューをブロック
-    document.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-    }, false);
-
-    // F12キー（デベロッパーツール）をブロック
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'F12' || e.keyCode === 123) {
-            e.preventDefault();
-            return false;
-        }
-    }, false);
-
     try {
         const settings = await eel.get_app_settings()();
         const root = document.documentElement;
+
+        // --- グローバルUI保護設定 ---
+        // デベロッパーモードが無効な場合のみ制限をかける
+        if (!settings.developer_mode) {
+            // 全画面での右クリックメニューをブロック
+            document.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+            }, false);
+
+            // F12キー（デベロッパーツール）をブロック
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'F12' || e.keyCode === 123) {
+                    e.preventDefault();
+                    return false;
+                }
+            }, false);
+        }
 
         function adjustColorBrightness(hex, amount) {
             let usePound = false;

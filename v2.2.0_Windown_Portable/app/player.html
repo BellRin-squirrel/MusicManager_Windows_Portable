@@ -147,6 +147,11 @@
                             <span id="currentPlaylistCount">-- 曲</span>
                             <span class="ph-divider">・</span>
                             <span id="currentPlaylistDuration">--</span>
+                            
+                            <!-- ソート順選択エリア -->
+                            <div id="phSortArea" class="ph-sort-container"></div>
+                            
+                            <button id="btnEditRules" class="btn-edit-rules">ルールを編集</button>
                         </div>
                         <div class="ph-actions" id="playlistActions" style="display: none;">
                             <button id="btnPlayAll" class="btn-action primary">
@@ -270,7 +275,7 @@
         </div>
     </div>
 
-    <!-- スマートプレイリストからの楽曲削除確認モーダル (New!) -->
+    <!-- スマートプレイリストからの楽曲削除確認モーダル -->
     <div id="smartRemoveConfirmModal" class="modal-overlay" style="display: none;">
         <div class="modal-content" style="width: 400px;">
             <h3 style="color: #ef4444;">確認</h3>

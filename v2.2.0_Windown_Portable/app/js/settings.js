@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const btnRestoreArt = document.getElementById('btnRestoreArt');
     const chkNewWindow = document.getElementById('openPlayerNewWindow');
     const chkManageNewWindow = document.getElementById('openManageNewWindow');
+    const chkDevMode = document.getElementById('developerMode'); // デベロッパーモード
     const itemsPerPage = document.getElementById('itemsPerPage');
     const primaryColor = document.getElementById('primaryColor');
 
@@ -19,6 +20,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const btnConfirmTheme = document.getElementById('btnConfirmTheme');
     const btnCancelTheme = document.getElementById('btnCancelTheme');
 
+    const devWarningModal = document.getElementById('devWarningModal');
+    const btnConfirmDev = document.getElementById('btnConfirmDev');
+    const btnCancelDev = document.getElementById('btnCancelDev');
+
     const THEME_PRESETS = {
         light: { bg: '#f3f4f6', subBg: '#ffffff', text: '#1f2937' },
         dark: { bg: '#111827', subBg: '#1f2937', text: '#f9fafb' }
@@ -27,7 +32,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     let customThemes = {};
     let currentSettings = {};
 
-    // カラー変換ユーティリティ
     function hexToRgba(hex, alpha) {
         let h = hex.replace('#', '');
         if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
@@ -37,16 +41,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         return `rgba(${r}, ${g}, ${b}, ${alpha})`;
     }
 
-    // 1. データの初期取得
     const settings = await eel.get_app_settings()();
     currentSettings = settings;
     const availableTags = await eel.get_available_tags()();
     customThemes = await eel.get_custom_themes()();
 
-    // 2. UIの初期化
     itemsPerPage.value = settings.items_per_page;
     chkNewWindow.checked = settings.open_player_new_window;
     chkManageNewWindow.checked = settings.open_manage_new_window;
+    chkDevMode.checked = settings.developer_mode;
     primaryColor.value = settings.primary_color;
 
     function rebuildThemeOptions(selectedMode) {
@@ -96,7 +99,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
     updateThemeUI();
 
-    // 3. 自動保存ロジック（リアルタイム反映を修正）
     async function saveAllSettings() {
         const active_tags = Array.from(document.querySelectorAll('.chk-db:checked')).map(cb => cb.value);
         const player_visible_tags = Array.from(document.querySelectorAll('.chk-player:checked')).map(cb => cb.value);
@@ -105,6 +107,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             items_per_page: parseInt(itemsPerPage.value) || 50,
             open_player_new_window: chkNewWindow.checked,
             open_manage_new_window: chkManageNewWindow.checked,
+            developer_mode: chkDevMode.checked,
             primary_color: primaryColor.value,
             theme_mode: themeMode.value,
             background_color: backgroundColor.value,
@@ -115,27 +118,43 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
 
         currentSettings = newSettings;
-
         const success = await eel.save_app_settings(newSettings)();
         if (success) {
             const root = document.documentElement;
-            // メインカラー反映
             root.style.setProperty('--primary-color', newSettings.primary_color);
             root.style.setProperty('--bg-color', newSettings.background_color);
             root.style.setProperty('--card-bg', newSettings.sub_background_color);
             root.style.setProperty('--text-main', newSettings.text_color);
+            root.style.setProperty('--text-sub', hexToRgba(newSettings.text_color, 0.6));
             
-            // ★重要: 文字色の透過バージョンも即座に再計算して反映
-            const textSub = hexToRgba(newSettings.text_color, 0.6);
-            root.style.setProperty('--text-sub', textSub);
-            
-            // LocalStorageを更新
             localStorage.setItem('theme_primary_color', newSettings.primary_color);
             localStorage.setItem('theme_bg_color', newSettings.background_color);
             localStorage.setItem('theme_sub_bg_color', newSettings.sub_background_color);
             localStorage.setItem('theme_text_color', newSettings.text_color);
         }
     }
+
+    // デベロッパーモードの特別制御
+    chkDevMode.addEventListener('click', (e) => {
+        if (chkDevMode.checked) {
+            e.preventDefault(); // 一旦チェックを止める
+            devWarningModal.style.display = 'flex';
+        } else {
+            saveAllSettings();
+        }
+    });
+
+    btnConfirmDev.addEventListener('click', () => {
+        chkDevMode.checked = true;
+        devWarningModal.style.display = 'none';
+        saveAllSettings();
+        showToast("デベロッパーモードを有効にしました");
+    });
+
+    btnCancelDev.addEventListener('click', () => {
+        chkDevMode.checked = false;
+        devWarningModal.style.display = 'none';
+    });
 
     [itemsPerPage, chkNewWindow, chkManageNewWindow, primaryColor, backgroundColor, subBackgroundColor, textColor].forEach(el => {
         el.addEventListener('change', saveAllSettings);
@@ -151,17 +170,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     btnConfirmTheme.addEventListener('click', async () => {
         const name = newThemeName.value.trim();
         if (!name) return;
-        if (name === 'light' || name === 'dark' || name === 'custom') {
+        if (['light', 'dark', 'custom'].includes(name)) {
             alert("その名前は使用できません。");
             return;
         }
 
-        const colors = {
-            bg: backgroundColor.value,
-            subBg: subBackgroundColor.value,
-            text: textColor.value
-        };
-
+        const colors = { bg: backgroundColor.value, subBg: subBackgroundColor.value, text: textColor.value };
         const success = await eel.save_custom_theme(name, colors)();
         if (success) {
             customThemes[name] = colors;

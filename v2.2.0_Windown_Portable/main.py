@@ -44,7 +44,7 @@ else:
     BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 # アプリバージョン定義
-appVersion = "v2.1.0"
+appVersion = "v2.2.0"
 
 LIBRARY_DIR = os.path.join(BASE_DIR, "library")
 MUSIC_DIR = os.path.join(LIBRARY_DIR, "music")
@@ -637,6 +637,7 @@ def load_settings():
     if not config.has_option('Database', 'items_per_page'): config.set('Database', 'items_per_page', '50')
     if not config.has_option('Database', 'open_player_new_window'): config.set('Database', 'open_player_new_window', 'false')
     if not config.has_option('Database', 'open_manage_new_window'): config.set('Database', 'open_manage_new_window', 'false')
+    if not config.has_option('Database', 'developer_mode'): config.set('Database', 'developer_mode', 'false')
     
     if not config.has_section('Theme'): config.add_section('Theme')
     if not config.has_option('Theme', 'primary_color'): config.set('Theme', 'primary_color', '#4f46e5')
@@ -676,6 +677,7 @@ def get_app_settings():
             'items_per_page': config.getint('Database', 'items_per_page'),
             'open_player_new_window': config.getboolean('Database', 'open_player_new_window'),
             'open_manage_new_window': config.getboolean('Database', 'open_manage_new_window'),
+            'developer_mode': config.getboolean('Database', 'developer_mode'),
             'primary_color': config.get('Theme', 'primary_color'),
             'background_color': config.get('Theme', 'background_color'),
             'sub_background_color': config.get('Theme', 'sub_background_color'),
@@ -698,6 +700,7 @@ def save_app_settings(s_dict):
         if 'items_per_page' in s_dict: config.set('Database', 'items_per_page', str(s_dict['items_per_page']))
         if 'open_player_new_window' in s_dict: config.set('Database', 'open_player_new_window', str(s_dict['open_player_new_window']).lower())
         if 'open_manage_new_window' in s_dict: config.set('Database', 'open_manage_new_window', str(s_dict['open_manage_new_window']).lower())
+        if 'developer_mode' in s_dict: config.set('Database', 'developer_mode', str(s_dict['developer_mode']).lower())
         if 'primary_color' in s_dict: config.set('Theme', 'primary_color', s_dict['primary_color'])
         if 'background_color' in s_dict: config.set('Theme', 'background_color', s_dict['background_color'])
         if 'sub_background_color' in s_dict: config.set('Theme', 'sub_background_color', s_dict['sub_background_color'])

@@ -66,12 +66,49 @@
     font-size: 0.95rem;
     color: var(--text-sub);
     margin-bottom: 24px;
+    flex-wrap: wrap;
+    gap: 8px;
 }
-.ph-divider { margin: 0 8px; }
+.ph-divider { margin: 0 4px; }
+
+/* ソート選択プルダウン */
+.ph-sort-container {
+    display: flex;
+    align-items: center;
+    margin-left: 12px;
+    gap: 6px;
+}
+
+.ph-sort-label {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--text-sub);
+}
+
+.ph-sort-select {
+    background-color: var(--card-bg) !important;
+    border: 1px solid rgba(128, 128, 128, 0.3);
+    color: var(--text-main) !important;
+    font-size: 0.8rem;
+    padding: 2px 8px;
+    border-radius: 4px;
+    outline: none;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+/* ★ 選択肢の背景色を最初から固定 */
+.ph-sort-select option {
+    background-color: var(--card-bg) !important;
+    color: var(--text-main) !important;
+}
+
+.ph-sort-select:hover {
+    background: rgba(128, 128, 128, 0.1);
+}
 
 /* ルール編集ボタン */
 .btn-edit-rules {
-    margin-left: 16px;
     background: rgba(128, 128, 128, 0.1);
     color: var(--text-main);
     border: 1px solid rgba(128, 128, 128, 0.2);
@@ -108,7 +145,6 @@
     flex: 1; 
     overflow-y: auto; 
     padding: 0;
-    /* テキスト選択を無効化（Shiftクリック時の誤選択防止） */
     user-select: none;
 }
 
@@ -137,7 +173,6 @@
     background: rgba(128, 128, 128, 0.05); 
 }
 
-/* ★ 選択中（クリック）のスタイル */
 .song-table tr.selected {
     background-color: rgba(128, 128, 128, 0.12) !important;
 }
@@ -190,13 +225,12 @@
 .col-album_artist { flex: 2 1 120px; }
 .col-composer { flex: 1.5 1 110px; }
 .col-bpm { flex: 0.6 1 60px; text-align: center; }
-/* その他不明なタグはデフォルト比率 */
+
 .song-table td:not(.col-status):not(.col-art):not(.col-time) {
     flex-grow: 1;
     flex-basis: 100px;
 }
 
-/* 再生中カラーの強制適用 */
 .song-table tr.current-playing td:not(.col-status):not(.col-art) {
     color: var(--primary-color) !important;
 }

@@ -29,12 +29,11 @@
 .modal-content {
     background: var(--card-bg); 
     padding: 24px;
-    border-radius: 16px;
+    border-radius: 12px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3); 
     text-align: center;
     display: flex;
     flex-direction: column;
-    /* ウィンドウサイズを最大値として制限 */
     max-width: 95vw;
     max-height: 95vh;
     box-sizing: border-box;
@@ -126,7 +125,7 @@
 /* --- 曲選択モーダル --- */
 .song-select-modal {
     width: 1000px;
-    height: 90vh; /* ウィンドウの9割を使う */
+    height: 90vh; 
     text-align: left;
 }
 
@@ -159,7 +158,7 @@
     position: relative;
     user-select: none;
     background: var(--card-bg); 
-    min-height: 0; /* flex内のスクロールを有効にするおまじない */
+    min-height: 0; 
 }
 
 .select-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
@@ -189,7 +188,7 @@
     background: var(--card-bg); 
 }
 
-/* --- 楽曲情報モーダル (Song Info Modal) --- */
+/* --- 楽曲情報モーダル --- */
 .info-modal {
     width: 800px;
     height: auto;
@@ -249,16 +248,10 @@
     content: ""; position: absolute; bottom: -1px; left: 0; width: 100%; height: 3px; background-color: var(--primary-color); border-radius: 3px 3px 0 0;
 }
 
-/* ボディ部分を広げる */
-.info-body { 
-    flex: 1; 
-    min-height: 0; 
-    overflow: hidden; 
-}
+.info-body { flex: 1; min-height: 0; overflow: hidden; }
 .tab-pane { display: none; height: 100%; overflow-y: auto; }
 .tab-pane.active { display: block; }
 
-/* 詳細タブ */
 .details-grid { display: flex; flex-direction: column; gap: 10px; padding-right: 8px; }
 .detail-item {
     display: flex; padding: 10px 14px; background: rgba(128, 128, 128, 0.05); border-radius: 8px; align-items: center;
@@ -266,7 +259,6 @@
 .detail-label { width: 160px; font-weight: 700; color: var(--text-sub); font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.02em; }
 .detail-value { flex: 1; color: var(--text-main); font-size: 0.95rem; word-break: break-all; font-weight: 500; }
 
-/* アートワークタブ */
 .large-art-container {
     display: flex; justify-content: center; align-items: center; height: 100%; padding: 10px;
 }
@@ -274,7 +266,6 @@
     max-width: 100%; max-height: 100%; border-radius: 12px; object-fit: contain; box-shadow: 0 4px 20px rgba(0,0,0,0.2);
 }
 
-/* 歌詞タブ */
 .lyrics-view {
     white-space: pre-wrap; line-height: 1.8; color: var(--text-main); font-size: 0.95rem; padding: 16px; background: rgba(128, 128, 128, 0.03); border-radius: 12px;
 }
@@ -299,12 +290,18 @@
     padding: 10px;
     border: 1px solid rgba(128, 128, 128, 0.3);
     border-radius: 6px;
-    background: var(--bg-color);
-    color: var(--text-main);
+    background-color: var(--card-bg) !important;
+    color: var(--text-main) !important;
     outline: none;
     font-size: 0.9rem;
     cursor: pointer;
     flex-shrink: 0;
+}
+
+/* ★ 選択肢の背景色を固定 */
+.smart-tag-select option, .smart-op-select option {
+    background-color: var(--card-bg) !important;
+    color: var(--text-main) !important;
 }
 
 .smart-tag-select:focus, .smart-op-select:focus {
@@ -324,7 +321,7 @@
     padding: 10px 12px;
     border: 1px solid rgba(128, 128, 128, 0.3);
     border-radius: 6px;
-    background: var(--bg-color);
+    background-color: var(--card-bg);
     color: var(--text-main);
     outline: none;
     font-size: 0.9rem;

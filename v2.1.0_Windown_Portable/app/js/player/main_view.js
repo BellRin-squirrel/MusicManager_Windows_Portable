@@ -1,0 +1,363 @@
+(function() {
+    const s = window.PlayerState;
+    const u = window.PlayerUtils;
+
+    window.MainViewController = {
+        playerSettings: null,
+        selectedTrackIndices: new Set(), 
+        lastTrackClickedIndex: null,    
+
+        init: function() {
+            document.getElementById('btnPlayAll').addEventListener('click', () => window.PlayerController.startPlaybackSession('normal'));
+            document.getElementById('btnShuffleAll').addEventListener('click', () => window.PlayerController.startPlaybackSession('shuffle'));
+            
+            // ルール編集ボタン（ヘッダー）
+            const btnEditRules = document.createElement('button');
+            btnEditRules.id = 'btnEditRules';
+            btnEditRules.className = 'btn-edit-rules';
+            btnEditRules.textContent = 'ルールを編集';
+            btnEditRules.onclick = () => {
+                const plData = s.playlists[s.currentPlaylistIndex];
+                if (window.SidebarController) window.SidebarController.openSmartPlaylistModal(plData);
+            };
+            document.getElementById('currentPlaylistDuration').after(btnEditRules);
+
+            // メニュー外クリックで閉じる
+            document.addEventListener('click', (e) => {
+                const isClickInTable = e.target.closest('.song-table tr');
+                const isClickInMenu = e.target.closest('.context-menu');
+                
+                if (!isClickInTable && !isClickInMenu) {
+                    this.clearSelection();
+                }
+                const trackMenu = document.getElementById('trackContextMenu');
+                if (trackMenu) trackMenu.style.display = 'none';
+            });
+
+            this.initInfoModal();
+            this.initTrackMenuEvents();
+            this.initSmartRemoveModal();
+        },
+
+        initInfoModal: function() {
+            const modal = document.getElementById('songInfoModal');
+            const btnClose = document.getElementById('btnCloseInfo');
+            if (btnClose) btnClose.onclick = () => modal.classList.remove('show');
+
+            const tabs = modal.querySelectorAll('.tab-btn');
+            tabs.forEach(btn => {
+                btn.onclick = () => {
+                    tabs.forEach(b => b.classList.remove('active'));
+                    modal.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+                    btn.classList.add('active');
+                    document.getElementById(btn.dataset.target).classList.add('active');
+                };
+            });
+        },
+
+        initTrackMenuEvents: function() {
+            // 曲の情報
+            document.getElementById('menuSongInfo').onclick = () => this.openSongInfoModal();
+            // ルールを編集
+            document.getElementById('menuEditSmartRules').onclick = () => {
+                const plData = s.playlists[s.currentPlaylistIndex];
+                if (window.SidebarController) window.SidebarController.openSmartPlaylistModal(plData);
+            };
+            // エクスプローラーで表示
+            document.getElementById('menuShowInExplorer').onclick = () => {
+                const songs = this.getSelectedSongs();
+                if (songs.length > 0) eel.open_in_explorer(songs[0].musicFilename)();
+            };
+            // プレイリストから削除
+            document.getElementById('menuRemoveFromPlaylist').onclick = async () => {
+                const pl = s.playlists[s.currentPlaylistIndex];
+                const songs = this.getSelectedSongs().map(song => song.musicFilename.split(/[\\/]/).pop());
+
+                if (pl.type === 'smart') {
+                    // スマートプレイリストの場合は確認モーダルを表示
+                    this.openSmartRemoveConfirmModal(pl.id, songs);
+                } else {
+                    // 通常の削除
+                    const res = await eel.remove_songs_from_playlist(pl.id, songs)();
+                    if (res) {
+                        s.playlists[s.currentPlaylistIndex] = res;
+                        this.renderMainView();
+                        u.showToast("削除しました", false);
+                    }
+                }
+            };
+        },
+
+        // スマート削除確認モーダルの初期化
+        initSmartRemoveModal: function() {
+            const modal = document.getElementById('smartRemoveConfirmModal');
+            const btnCancel = document.getElementById('btnCancelSmartRemove');
+            const btnExec = document.getElementById('btnExecSmartRemove');
+
+            btnCancel.onclick = () => modal.classList.remove('show');
+            
+            btnExec.onclick = async () => {
+                modal.classList.remove('show');
+                window.SidebarController.showSaving();
+                
+                const plId = modal.dataset.plId;
+                const songs = JSON.parse(modal.dataset.songs);
+
+                try {
+                    const res = await eel.convert_smart_to_normal_and_remove_songs(plId, songs)();
+                    if (res) {
+                        // プレイリスト一覧全体を更新（アイコン変更等のため）
+                        await window.SidebarController.loadPlaylists();
+                        const newIdx = s.playlists.findIndex(p => p.id === plId);
+                        if (newIdx !== -1) {
+                            window.MainViewController.selectPlaylist(newIdx);
+                        }
+                        u.showToast("通常のプレイリストに変換し、楽曲を削除しました", false);
+                    }
+                } catch (e) {
+                    console.error(e);
+                    u.showToast("処理に失敗しました", true);
+                } finally {
+                    window.SidebarController.hideSaving();
+                }
+            };
+        },
+
+        openSmartRemoveConfirmModal: function(plId, songs) {
+            const modal = document.getElementById('smartRemoveConfirmModal');
+            modal.dataset.plId = plId;
+            modal.dataset.songs = JSON.stringify(songs);
+            modal.classList.add('show');
+        },
+
+        selectPlaylist: function(index) {
+            document.querySelectorAll('.playlist-item').forEach(el => el.classList.remove('active'));
+            s.currentPlaylistIndex = index;
+            this.clearSelection(); 
+            window.SidebarController.renderSidebar(); 
+            this.renderMainView();
+        },
+
+        clearSelection: function() {
+            this.selectedTrackIndices.clear();
+            this.lastTrackClickedIndex = null;
+            this.updateSelectionUI();
+        },
+
+        updateSelectionUI: function() {
+            const rows = document.querySelectorAll('.song-table tbody tr');
+            rows.forEach((tr, idx) => {
+                if (this.selectedTrackIndices.has(idx)) tr.classList.add('selected');
+                else tr.classList.remove('selected');
+            });
+        },
+
+        handleRowClick: function(index, event) {
+            if (event.shiftKey && this.lastTrackClickedIndex !== null) {
+                const start = Math.min(this.lastTrackClickedIndex, index);
+                const end = Math.max(this.lastTrackClickedIndex, index);
+                this.selectedTrackIndices.clear();
+                for (let i = start; i <= end; i++) this.selectedTrackIndices.add(i);
+            } else {
+                this.selectedTrackIndices.clear();
+                this.selectedTrackIndices.add(index);
+                this.lastTrackClickedIndex = index;
+            }
+            this.updateSelectionUI();
+        },
+
+        getSelectedSongs: function() {
+            if (s.currentPlaylistIndex === -1) return [];
+            const pl = s.playlists[s.currentPlaylistIndex];
+            const sortedSongs = u.sortSongs(pl.songs, pl.sortBy);
+            return Array.from(this.selectedTrackIndices).map(idx => sortedSongs[idx]);
+        },
+
+        showTrackContextMenu: function(e) {
+            const menu = document.getElementById('trackContextMenu');
+            const pl = s.playlists[s.currentPlaylistIndex];
+            
+            document.getElementById('menuEditSmartRules').style.display = (pl.type === 'smart') ? 'block' : 'none';
+            this.renderPlaylistSubmenu();
+
+            menu.style.display = 'block';
+            menu.style.visibility = 'hidden';
+            
+            const mw = 220; const mh = menu.offsetHeight;
+            let x = e.clientX; let y = e.clientY;
+            if (x + mw > window.innerWidth) x -= mw;
+            if (y + mh > window.innerHeight) y -= mh;
+            
+            menu.style.left = `${x}px`;
+            menu.style.top = `${y}px`;
+            menu.style.visibility = 'visible';
+
+            const submenu = document.getElementById('playlistSubmenu');
+            if (x + mw + 180 > window.innerWidth) submenu.classList.add('left-side');
+            else submenu.classList.remove('left-side');
+        },
+
+        renderPlaylistSubmenu: function() {
+            const container = document.getElementById('playlistSubmenu');
+            container.innerHTML = '<ul><li id="subNewPlaylist">新規プレイリスト</li><li class="menu-divider"></li></ul>';
+            
+            const ul = container.querySelector('ul');
+            s.playlists.forEach(p => {
+                if (p.type !== 'smart') {
+                    const li = document.createElement('li');
+                    li.textContent = p.playlistName;
+                    li.onclick = async () => {
+                        const songs = this.getSelectedSongs().map(song => song.musicFilename.split(/[\\/]/).pop());
+                        const res = await eel.add_songs_to_playlist(p.id, songs)();
+                        if (res) u.showToast(`「${p.playlistName}」に追加しました`, false);
+                    };
+                    ul.appendChild(li);
+                }
+            });
+
+            document.getElementById('subNewPlaylist').onclick = async () => {
+                const songs = this.getSelectedSongs();
+                const filenames = songs.map(song => song.musicFilename.split(/[\\/]/).pop());
+                const defaultName = songs.length === 1 ? songs[0].title : `${songs.length}個の楽曲`;
+                
+                const newPl = await eel.create_playlist(defaultName, 'normal')();
+                if (filenames.length > 0 && newPl) {
+                    await eel.add_songs_to_playlist(newPl.id, filenames)();
+                }
+                await window.SidebarController.loadPlaylists();
+                if (newPl) window.SidebarController.startRenameById(newPl.id);
+            };
+        },
+
+        openSongInfoModal: async function() {
+            const selectedSongs = this.getSelectedSongs();
+            if (selectedSongs.length === 0) return;
+
+            const modal = document.getElementById('songInfoModal');
+            const pl = s.playlists[s.currentPlaylistIndex];
+            
+            const imgEl = document.getElementById('infoArt');
+            const largeImgEl = document.getElementById('largeArt');
+            const titleEl = document.getElementById('infoTitle');
+            const artistEl = document.getElementById('infoArtist');
+            const albumEl = document.getElementById('infoAlbum');
+
+            if (selectedSongs.length === 1) {
+                const song = selectedSongs[0];
+                imgEl.src = largeImgEl.src = song.imageData || s.DEFAULT_ICON;
+                titleEl.textContent = song.title || "Unknown Title";
+                artistEl.textContent = song.artist || "Unknown Artist";
+                albumEl.textContent = song.album || "";
+                albumEl.style.display = song.album ? "block" : "none";
+                document.getElementById('infoLyrics').textContent = song.lyric || "歌詞情報はありません。";
+            } else {
+                const artworks = new Set(selectedSongs.map(song => song.imageData));
+                imgEl.src = largeImgEl.src = (artworks.size === 1) ? Array.from(artworks)[0] : s.DEFAULT_ICON;
+                titleEl.textContent = `${selectedSongs.length}個の楽曲を選択中`;
+                artistEl.textContent = `選択元: ${pl.playlistName}`;
+                albumEl.style.display = "none";
+                document.getElementById('infoLyrics').textContent = "複数選択時は歌詞を表示できません。";
+            }
+
+            const detailsList = document.getElementById('detailsList');
+            detailsList.innerHTML = '';
+            
+            if (!this.playerSettings) this.playerSettings = await eel.get_app_settings()();
+            const allTags = await eel.get_available_tags()();
+            const dbTags = allTags.filter(t => this.playerSettings.active_tags.includes(t.key));
+
+            dbTags.forEach(tag => {
+                const row = document.createElement('div');
+                row.className = 'detail-item';
+                let valText = "";
+                if (selectedSongs.length === 1) {
+                    valText = selectedSongs[0][tag.key] || "-";
+                } else {
+                    const values = new Set(selectedSongs.map(song => song[tag.key] || ""));
+                    valText = (values.size === 1) ? Array.from(values)[0] : "< 複数の値 >";
+                    if (!valText) valText = "-";
+                }
+                row.innerHTML = `<div class="detail-label">${tag.label}</div><div class="detail-value">${u.escapeHtml(valText)}</div>`;
+                detailsList.appendChild(row);
+            });
+
+            modal.querySelector('.tab-btn[data-target="tab-details"]').click();
+            modal.classList.add('show');
+        },
+
+        renderMainView: async function() {
+            if (s.currentPlaylistIndex === -1 || !s.playlists[s.currentPlaylistIndex]) return;
+            if (!this.playerSettings) this.playerSettings = await eel.get_app_settings()();
+
+            const plData = s.playlists[s.currentPlaylistIndex];
+            const songs = u.sortSongs(plData.songs, plData.sortBy);
+            const visibleTags = this.playerSettings.player_visible_tags || ['title', 'artist', 'album'];
+            
+            document.getElementById('currentPlaylistTitle').textContent = plData.playlistName;
+            document.getElementById('currentPlaylistCount').textContent = `${songs.length} 曲`;
+            
+            let totalSec = 0;
+            songs.forEach(song => {
+                if(song.duration && song.duration!=="--:--") {
+                    const p = song.duration.split(':');
+                    if(p.length===2) totalSec += parseInt(p[0])*60 + parseInt(p[1]);
+                }
+            });
+            document.getElementById('currentPlaylistDuration').textContent = u.formatTotalDuration(totalSec);
+
+            const btnEdit = document.getElementById('btnEditRules');
+            if (btnEdit) btnEdit.style.display = (plData.type === 'smart') ? 'inline-block' : 'none';
+
+            const cover = document.getElementById('playlistCoverArt');
+            if (songs.length>0 && songs[0].imageData) cover.src = songs[0].imageData;
+            else cover.src = s.DEFAULT_ICON;
+
+            document.getElementById('playlistActions').style.display = 'flex';
+
+            const tbody = document.getElementById('songListBody');
+            tbody.innerHTML = '';
+            
+            songs.forEach((song, idx) => {
+                const tr = document.createElement('tr');
+                const isPlaying = window.PlayerController.isSongPlaying(song);
+                if (isPlaying) tr.classList.add('current-playing');
+                if (this.selectedTrackIndices.has(idx)) tr.classList.add('selected');
+
+                const artSrc = song.imageData || s.DEFAULT_ICON;
+                let rowHtml = `
+                    <td class="col-status">${isPlaying ? s.ICON_PLAYING : ''}</td>
+                    <td class="col-art">
+                        <div class="art-container">
+                            <img src="${artSrc}">
+                            <div class="art-overlay" onclick="event.stopPropagation(); window.MainViewController.playTrackAtIndex(${idx})">${s.SVG_PLAY}</div>
+                        </div>
+                    </td>
+                `;
+                visibleTags.forEach(tagKey => {
+                    const val = u.escapeHtml(song[tagKey] || '');
+                    rowHtml += `<td class="col-${tagKey}" title="${val}">${val}</td>`;
+                });
+                rowHtml += `<td class="col-time">${song.duration}</td>`;
+                tr.innerHTML = rowHtml;
+
+                tr.onclick = (e) => this.handleRowClick(idx, e);
+                tr.oncontextmenu = (e) => {
+                    e.preventDefault();
+                    if (!this.selectedTrackIndices.has(idx)) this.handleRowClick(idx, e);
+                    this.showTrackContextMenu(e);
+                };
+                tr.ondblclick = (e) => {
+                    if (e.target.closest('.art-container')) return;
+                    window.PlayerController.startPlaybackSession('normal', idx);
+                };
+                tbody.appendChild(tr);
+            });
+        },
+
+        playTrackAtIndex: function(idx) {
+            s.isShuffle = false; 
+            s.loopMode = 'off';
+            window.PlayerController.startPlaybackSession('normal', idx);
+        }
+    };
+})();

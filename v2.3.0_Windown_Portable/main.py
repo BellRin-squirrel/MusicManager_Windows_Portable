@@ -44,7 +44,7 @@ else:
     BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 # アプリバージョン定義
-appVersion = "v2.2.0"
+appVersion = "v2.3.0"
 
 LIBRARY_DIR = os.path.join(BASE_DIR, "library")
 MUSIC_DIR = os.path.join(LIBRARY_DIR, "music")
@@ -53,6 +53,7 @@ USERFILES_DIR = os.path.join(BASE_DIR, "userfiles")
 
 DB_PATH = os.path.join(USERFILES_DIR, "music.json")
 PLAYLIST_DIR = os.path.join(USERFILES_DIR, "playlist")
+PLAYLIST_MASTER_PATH = os.path.join(USERFILES_DIR, "playlist.json")
 LYRIC_DB_PATH = os.path.join(USERFILES_DIR, "lyric.json")
 SETTINGS_PATH = os.path.join(USERFILES_DIR, "settings.ini")
 CUSTOM_THEMES_PATH = os.path.join(USERFILES_DIR, "custom_themes.json")
@@ -88,6 +89,27 @@ AUTH_STATE = {
 @eel.expose
 def getAppVersion():
     return appVersion
+
+def save_playlist_master(data_list):
+    """プレイリストの基本情報一覧(playlist.json)を保存する"""
+    try:
+        with open(PLAYLIST_MASTER_PATH, 'w', encoding='utf-8') as f:
+            json.dump(data_list, f, indent=4, ensure_ascii=False)
+        return True
+    except Exception as e:
+        print(f"Master Playlist Save Error: {e}")
+        return False
+
+def load_playlist_master():
+    """プレイリストの基本情報一覧(playlist.json)を読み込む"""
+    if not os.path.exists(PLAYLIST_MASTER_PATH):
+        return []
+    try:
+        with open(PLAYLIST_MASTER_PATH, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Master Playlist Load Error: {e}")
+        return []
 
 def auth_code_generator():
     """30秒ごとにコードを更新する正しいロジック"""
@@ -287,24 +309,22 @@ def migrate_lyrics_to_db():
 
 @eel.expose
 def create_smart_playlist(name, conditions):
-    """スマートプレイリストを新規作成し、条件に合う曲を即座に抽出して保存する"""
+    """スマートプレイリストを新規作成"""
     pl_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=32))
-    save_data = {
+    
+    new_pl = {
+        "id": pl_id,
         "playlistName": name,
         "type": "smart",
         "sortBy": "title",
-        "conditions": conditions,
-        "music": []
+        "sortDesc": False,
+        "conditions": conditions
     }
-    db = load_db()
-    matched_filenames = []
-    for song in db:
-        if evaluate_smart_rules(song, conditions):
-            matched_filenames.append(os.path.basename(song.get('musicFilename', '')))
-    save_data["music"] = matched_filenames
-    path = os.path.join(PLAYLIST_DIR, f"{pl_id}.json")
-    with open(path, 'w', encoding='utf-8') as f:
-        json.dump(save_data, f, indent=4, ensure_ascii=False)
+
+    master = load_playlist_master()
+    master.append(new_pl)
+    save_playlist_master(master)
+    
     return get_playlist_details(pl_id)
 
 def evaluate_smart_rules(song, rule_item):
@@ -469,27 +489,34 @@ def serve_mobile_image(filename):
 
 @flask_app.route('/api/playlists', methods=['GET'])
 def api_playlists():
-    """iPhoneアプリ: fetch playlists (個別JSONファイルを集約して返す)"""
+    """iPhoneアプリ同期用：すべてのプレイリストと、それに紐づく楽曲リストを集約して返す"""
     if not verify_request(request): return jsonify({"error": "Unauthorized"}), 403
     try:
-        # プレイリストディレクトリが存在しない場合
-        if not os.path.exists(PLAYLIST_DIR):
-            return jsonify({"playlists": []})
-
-        playlist_files = glob.glob(os.path.join(PLAYLIST_DIR, "*.json"))
+        master = load_playlist_master()
+        raw_db = load_db()
         playlists_list = []
 
-        for f_path in playlist_files:
-            try:
-                with open(f_path, 'r', encoding='utf-8') as pf:
-                    pl_data = json.load(pf)
-                    # 個別ファイルのJSONを配列に追加
-                    playlists_list.append(pl_data)
-            except Exception as e:
-                print(f"Error loading playlist file {f_path}: {e}")
-                continue
+        for pl in master:
+            pl_data = pl.copy()
+            if pl.get('type') == 'smart' and 'conditions' in pl:
+                matched_filenames = []
+                for song in raw_db:
+                    if evaluate_smart_rules(song, pl['conditions']):
+                        matched_filenames.append(os.path.basename(song.get('musicFilename', '')))
+                pl_data['music'] = matched_filenames
+            else:
+                songs_path = os.path.join(PLAYLIST_DIR, f"{pl.get('id')}.json")
+                if os.path.exists(songs_path):
+                    try:
+                        with open(songs_path, 'r', encoding='utf-8') as f:
+                            pl_data['music'] = json.load(f)
+                    except:
+                        pl_data['music'] = []
+                else:
+                    pl_data['music'] = []
+                    
+            playlists_list.append(pl_data)
 
-        # iPhoneアプリ側の期待する形式 {"playlists": [ ... ]} で返却
         return jsonify({"playlists": playlists_list})
 
     except Exception as e:
@@ -638,6 +665,8 @@ def load_settings():
     if not config.has_option('Database', 'open_player_new_window'): config.set('Database', 'open_player_new_window', 'false')
     if not config.has_option('Database', 'open_manage_new_window'): config.set('Database', 'open_manage_new_window', 'false')
     if not config.has_option('Database', 'developer_mode'): config.set('Database', 'developer_mode', 'false')
+    # ★変更: デフォルトを false に修正
+    if not config.has_option('Database', 'lazy_load_playlists'): config.set('Database', 'lazy_load_playlists', 'false')
     
     if not config.has_section('Theme'): config.add_section('Theme')
     if not config.has_option('Theme', 'primary_color'): config.set('Theme', 'primary_color', '#4f46e5')
@@ -678,6 +707,7 @@ def get_app_settings():
             'open_player_new_window': config.getboolean('Database', 'open_player_new_window'),
             'open_manage_new_window': config.getboolean('Database', 'open_manage_new_window'),
             'developer_mode': config.getboolean('Database', 'developer_mode'),
+            'lazy_load_playlists': config.getboolean('Database', 'lazy_load_playlists'), # ★追加
             'primary_color': config.get('Theme', 'primary_color'),
             'background_color': config.get('Theme', 'background_color'),
             'sub_background_color': config.get('Theme', 'sub_background_color'),
@@ -701,6 +731,7 @@ def save_app_settings(s_dict):
         if 'open_player_new_window' in s_dict: config.set('Database', 'open_player_new_window', str(s_dict['open_player_new_window']).lower())
         if 'open_manage_new_window' in s_dict: config.set('Database', 'open_manage_new_window', str(s_dict['open_manage_new_window']).lower())
         if 'developer_mode' in s_dict: config.set('Database', 'developer_mode', str(s_dict['developer_mode']).lower())
+        if 'lazy_load_playlists' in s_dict: config.set('Database', 'lazy_load_playlists', str(s_dict['lazy_load_playlists']).lower()) # ★追加
         if 'primary_color' in s_dict: config.set('Theme', 'primary_color', s_dict['primary_color'])
         if 'background_color' in s_dict: config.set('Theme', 'background_color', s_dict['background_color'])
         if 'sub_background_color' in s_dict: config.set('Theme', 'sub_background_color', s_dict['sub_background_color'])
@@ -742,26 +773,27 @@ def get_custom_themes():
 
 @eel.expose
 def add_songs_to_playlist(pl_id, filenames):
-    """指定されたプレイリストに複数の楽曲を追加する（重複は無視）"""
-    path = os.path.join(PLAYLIST_DIR, f"{pl_id}.json")
-    if not os.path.exists(path): return None
-    try:
-        with open(path, 'r', encoding='utf-8') as f:
-            pl = json.load(f)
+    """プレイリストに楽曲を追加する"""
+    master = load_playlist_master()
+    pl = next((p for p in master if p.get('id') == pl_id), None)
+    if not pl or pl.get('type') == 'smart': return None
+    
+    songs_path = os.path.join(PLAYLIST_DIR, f"{pl_id}.json")
+    current_music = []
+    if os.path.exists(songs_path):
+        try:
+            with open(songs_path, 'r', encoding='utf-8') as f:
+                current_music = json.load(f)
+        except: pass
         
-        current_music = pl.get('music', [])
-        added_count = 0
-        for fname in filenames:
-            if fname not in current_music:
-                current_music.append(fname)
-                added_count += 1
-        
-        pl['music'] = current_music
-        with open(path, 'w', encoding='utf-8') as f:
-            json.dump(pl, f, indent=4, ensure_ascii=False)
+    for fname in filenames:
+        if fname not in current_music:
+            current_music.append(fname)
             
-        return get_playlist_details(pl_id)
-    except: return None
+    with open(songs_path, 'w', encoding='utf-8') as f:
+        json.dump(current_music, f, indent=4, ensure_ascii=False)
+        
+    return get_playlist_details(pl_id)
 
 @eel.expose
 def save_custom_theme(name, colors):
@@ -1363,22 +1395,24 @@ def extract_artwork_from_local_file(b64_music):
 
 @eel.expose
 def remove_songs_from_playlist(pl_id, filenames):
-    """プレイリストから指定された楽曲を削除する"""
-    path = os.path.join(PLAYLIST_DIR, f"{pl_id}.json")
-    if not os.path.exists(path): return None
-    try:
-        with open(path, 'r', encoding='utf-8') as f:
-            pl = json.load(f)
+    """プレイリストから楽曲を削除する"""
+    master = load_playlist_master()
+    pl = next((p for p in master if p.get('id') == pl_id), None)
+    if not pl or pl.get('type') == 'smart': return None
+    
+    songs_path = os.path.join(PLAYLIST_DIR, f"{pl_id}.json")
+    current_music = []
+    if os.path.exists(songs_path):
+        try:
+            with open(songs_path, 'r', encoding='utf-8') as f:
+                current_music = json.load(f)
+        except: pass
         
-        current_music = pl.get('music', [])
-        new_music = [m for m in current_music if m not in filenames]
+    new_music = [m for m in current_music if m not in filenames]
+    with open(songs_path, 'w', encoding='utf-8') as f:
+        json.dump(new_music, f, indent=4, ensure_ascii=False)
         
-        pl['music'] = new_music
-        with open(path, 'w', encoding='utf-8') as f:
-            json.dump(pl, f, indent=4, ensure_ascii=False)
-            
-        return get_playlist_details(pl_id)
-    except: return None
+    return get_playlist_details(pl_id)
 
 @eel.expose
 def fetch_and_crop_image_url(url):
@@ -1523,172 +1557,166 @@ def delete_song_by_id(music_filename):
         return False
 
 @eel.expose
-def update_playlist_songs(index, filenames):
-    try:
-        with open(PLAYLIST_DB_PATH, 'r', encoding='utf-8') as f:
-            playlists = json.load(f)
-        if 0 <= index < len(playlists):
-            playlists[index]['music'] = filenames
-            with open(PLAYLIST_DB_PATH, 'w', encoding='utf-8') as f:
-                json.dump(playlists, f, indent=4, ensure_ascii=False)
-            return True
-        return False
-    except Exception:
-        return False
-
-@eel.expose
 def get_playlist_summaries():
-    """プレイリスト一覧を取得 (サイドバー用)。musicリストは読み込むが、詳細は展開しない"""
-    playlist_files = glob.glob(os.path.join(PLAYLIST_DIR, "*.json"))
+    """プレイリスト一覧を取得 (サイドバー用)。基本情報のみ返す"""
+    master = load_playlist_master()
     summaries = []
-    for f in playlist_files:
+    for pl in master:
         try:
-            pl_id = os.path.splitext(os.path.basename(f))[0]
-            with open(f, 'r', encoding='utf-8') as pf:
-                pl = json.load(pf)
-            
-            # サイドバー表示に必要な最小限の情報のみ返す
             summaries.append({
-                "id": pl_id,
+                "id": pl.get('id'),
                 "playlistName": pl.get('playlistName', 'Untitled'),
                 "totalDuration": "0分", 
                 "sortBy": pl.get('sortBy', 'title'),
-                "songs": None # 詳細は後で get_playlist_details で取得
+                "sortDesc": pl.get('sortDesc', False),
+                "type": pl.get('type', 'normal'),
+                "songs": None
             })
         except: continue
     return summaries
 
 @eel.expose
 def get_playlist_details(pl_id):
-    path = os.path.join(PLAYLIST_DIR, f"{pl_id}.json")
-    if not os.path.exists(path): return None
-    try:
-        with open(path, 'r', encoding='utf-8') as f: 
-            pl = json.load(f)
-        
-        raw_db = load_db()
-
-        # ★スマートプレイリストの場合は、読み込み時に条件を再評価してmusicリストを更新する
-        if pl.get('type') == 'smart' and 'conditions' in pl:
-            matched_filenames = []
-            for song in raw_db:
-                if evaluate_smart_rules(song, pl['conditions']):
-                    matched_filenames.append(os.path.basename(song.get('musicFilename', '')))
-            pl['music'] = matched_filenames
-            # ファイル自体も最新の状態に更新しておく（任意）
-            with open(path, 'w', encoding='utf-8') as f:
-                json.dump(pl, f, indent=4, ensure_ascii=False)
-
-        music_map = {os.path.basename(m.get('musicFilename','')): m for m in raw_db if m.get('musicFilename')}
-        songs = []
-        total_seconds = 0
-        for fname in pl.get('music', []):
-            if fname in music_map:
-                s = music_map[fname].copy()
-                m_path = resolve_db_path(s.get('musicFilename'))
-                duration_str = "--:--"
-                if m_path and os.path.exists(m_path):
-                    try:
-                        audio = MP3(m_path)
-                        sec = int(audio.info.length)
-                        total_seconds += sec
-                        duration_str = f"{sec // 60}:{sec % 60:02d}"
-                    except: pass
-                s['duration'] = duration_str
-                s['imageData'] = get_image_base64(s.get('imageFilename'))
-                songs.append(s)
-        
-        pl['id'] = pl_id
-        pl['songs'] = songs
-        if total_seconds < 60: dur_str = f"{total_seconds}秒"
-        elif total_seconds < 3600: dur_str = f"{total_seconds // 60}分"
-        else: dur_str = f"{round(total_seconds / 3600, 1)}時間"
-        pl['totalDuration'] = dur_str
-        return pl
-    except Exception as e:
-        print(f"Error details: {e}")
-        return None
+    """プレイリストの詳細（楽曲情報含む）を取得する"""
+    master = load_playlist_master()
+    pl = next((p for p in master if p.get('id') == pl_id), None)
+    if not pl: return None
+    
+    raw_db = load_db()
+    music_map = {os.path.basename(m.get('musicFilename','')): m for m in raw_db if m.get('musicFilename')}
+    
+    # 楽曲リストの取得
+    music_list = []
+    if pl.get('type') == 'smart' and 'conditions' in pl:
+        # スマートプレイリスト：動的抽出
+        for song in raw_db:
+            if evaluate_smart_rules(song, pl['conditions']):
+                music_list.append(os.path.basename(song.get('musicFilename', '')))
+    else:
+        # 通常プレイリスト：playlistフォルダの個別JSONから読み込み
+        songs_path = os.path.join(PLAYLIST_DIR, f"{pl_id}.json")
+        if os.path.exists(songs_path):
+            try:
+                with open(songs_path, 'r', encoding='utf-8') as f:
+                    music_list = json.load(f)
+            except: pass
+    
+    songs = []
+    total_seconds = 0
+    for fname in music_list:
+        if fname in music_map:
+            s = music_map[fname].copy()
+            m_path = resolve_db_path(s.get('musicFilename'))
+            duration_str = "--:--"
+            if m_path and os.path.exists(m_path):
+                try:
+                    audio = MP3(m_path)
+                    sec = int(audio.info.length)
+                    total_seconds += sec
+                    duration_str = f"{sec // 60}:{sec % 60:02d}"
+                except: pass
+            s['duration'] = duration_str
+            s['imageData'] = get_image_base64(s.get('imageFilename'))
+            songs.append(s)
+    
+    pl['music'] = music_list # 同期用に配列を詰めておく
+    pl['songs'] = songs
+    if total_seconds < 60: dur_str = f"{total_seconds}秒"
+    elif total_seconds < 3600: dur_str = f"{total_seconds // 60}分"
+    else: dur_str = f"{round(total_seconds / 3600, 1)}時間"
+    pl['totalDuration'] = dur_str
+    
+    return pl
 
 @eel.expose
 def create_playlist(name, pl_type="normal"):
-    """新規プレイリスト作成。指定されたJSONフォーマットのみを保存する"""
+    """新規プレイリスト作成"""
     pl_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=32))
     
-    save_data = {
+    new_pl = {
+        "id": pl_id,
         "playlistName": name,
         "type": pl_type,
         "sortBy": "title",
-        "music": []
+        "sortDesc": False
     }
     
     if pl_type == "smart":
-        save_data["conditions"] = []
+        new_pl["conditions"] = []
+    else:
+        # 通常プレイリストの場合は空の配列を保存
+        songs_path = os.path.join(PLAYLIST_DIR, f"{pl_id}.json")
+        with open(songs_path, 'w', encoding='utf-8') as f:
+            json.dump([], f, indent=4, ensure_ascii=False)
+            
+    master = load_playlist_master()
+    master.append(new_pl)
+    save_playlist_master(master)
     
-    with open(os.path.join(PLAYLIST_DIR, f"{pl_id}.json"), 'w', encoding='utf-8') as f:
-        json.dump(save_data, f, indent=4, ensure_ascii=False)
-    
-    response_data = save_data.copy()
-    response_data['id'] = pl_id
-    response_data['songs'] = [] # 空の配列を確実に返す
-    response_data['totalDuration'] = "0分"
-    return response_data
+    return get_playlist_details(pl_id)
 
 @eel.expose
 def update_playlist_by_id(pl_id, field, value):
-    """プレイリスト更新。JSONには必須フィールドのみ保存する"""
-    path = os.path.join(PLAYLIST_DIR, f"{pl_id}.json")
-    if not os.path.exists(path): return None
-    try:
-        with open(path, 'r', encoding='utf-8') as f:
-            pl = json.load(f)
-        
+    """プレイリストのマスター情報（名前、ソート順など）を更新、musicフィールドの場合は個別JSONを更新"""
+    master = load_playlist_master()
+    pl = next((p for p in master if p.get('id') == pl_id), None)
+    if not pl: return None
+    
+    if field == 'music':
+        # 通常プレイリストの楽曲リスト更新
+        if pl.get('type') != 'smart':
+            songs_path = os.path.join(PLAYLIST_DIR, f"{pl_id}.json")
+            with open(songs_path, 'w', encoding='utf-8') as f:
+                json.dump(value, f, indent=4, ensure_ascii=False)
+    else:
+        # 基本情報の更新
         pl[field] = value
+        save_playlist_master(master)
         
-        with open(path, 'w', encoding='utf-8') as f:
-            json.dump(pl, f, indent=4, ensure_ascii=False)
-        
-        return get_playlist_details(pl_id)
-    except: return None
+    return get_playlist_details(pl_id)
     
 @eel.expose
 def delete_playlist_by_id(pl_id):
-    """指定されたIDのプレイリストJSONファイルを削除する"""
-    path = os.path.join(PLAYLIST_DIR, f"{pl_id}.json")
-    if os.path.exists(path):
-        try:
-            os.remove(path)
-            return True
-        except:
-            return False
+    """プレイリストの削除"""
+    master = load_playlist_master()
+    new_master = [p for p in master if p.get('id') != pl_id]
+    
+    if len(master) != len(new_master):
+        save_playlist_master(new_master)
+        # 個別JSONファイルがあれば削除
+        songs_path = os.path.join(PLAYLIST_DIR, f"{pl_id}.json")
+        if os.path.exists(songs_path):
+            try: os.remove(songs_path)
+            except: pass
+        return True
     return False
 
 @eel.expose
 def duplicate_playlist_by_id(pl_id):
-    """指定されたIDのプレイリストを複製し、新しい詳細オブジェクトを返す"""
-    src_path = os.path.join(PLAYLIST_DIR, f"{pl_id}.json")
-    if not os.path.exists(src_path):
-        return None
+    """プレイリストの複製"""
+    master = load_playlist_master()
+    src_pl = next((p for p in master if p.get('id') == pl_id), None)
+    if not src_pl: return None
     
-    try:
-        with open(src_path, 'r', encoding='utf-8') as f:
-            pl = json.load(f)
-
-        # プレイリスト名の変更 (例: sample - コピー)
-        pl['playlistName'] = f"{pl.get('playlistName', 'Untitled')} - コピー"
-
-        # 新しいユニークIDの生成
-        new_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=32))
-        dst_path = os.path.join(PLAYLIST_DIR, f"{new_id}.json")
-
-        # 新しいファイルとして保存
-        with open(dst_path, 'w', encoding='utf-8') as f:
-            json.dump(pl, f, indent=4, ensure_ascii=False)
-
-        # サイドバーやメイン表示を即時更新させるため、
-        # 計算済みの詳細データ（songsやtotalDurationを含む）を返却する
-        return get_playlist_details(new_id)
-    except:
-        return None
+    new_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=32))
+    new_pl = copy.deepcopy(src_pl)
+    new_pl['id'] = new_id
+    new_pl['playlistName'] = f"{src_pl.get('playlistName', 'Untitled')} - コピー"
+    
+    # 通常プレイリストの場合は楽曲リストも複製
+    if src_pl.get('type') != 'smart':
+        src_songs_path = os.path.join(PLAYLIST_DIR, f"{pl_id}.json")
+        dst_songs_path = os.path.join(PLAYLIST_DIR, f"{new_id}.json")
+        if os.path.exists(src_songs_path):
+            shutil.copy2(src_songs_path, dst_songs_path)
+        else:
+            with open(dst_songs_path, 'w', encoding='utf-8') as f:
+                json.dump([], f, indent=4, ensure_ascii=False)
+                
+    master.append(new_pl)
+    save_playlist_master(master)
+    
+    return get_playlist_details(new_id)
     
 @eel.expose
 def scan_mp3_zip(zip_path, password=None):
@@ -2053,50 +2081,44 @@ def check_tools_status():
 
 @eel.expose
 def convert_smart_to_normal_and_remove_songs(pl_id, filenames):
-    """スマートプレイリストを通常プレイリストに変換し、指定された楽曲を削除する"""
-    path = os.path.join(PLAYLIST_DIR, f"{pl_id}.json")
-    if not os.path.exists(path): return None
-    try:
-        with open(path, 'r', encoding='utf-8') as f:
-            pl = json.load(f)
+    """スマートプレイリストを通常に変換し、指定された楽曲を削除する"""
+    master = load_playlist_master()
+    pl = next((p for p in master if p.get('id') == pl_id), None)
+    if not pl: return None
+    
+    # スマートプレイリストとしての現在の楽曲リストを取得
+    raw_db = load_db()
+    current_music = []
+    if 'conditions' in pl:
+        for song in raw_db:
+            if evaluate_smart_rules(song, pl['conditions']):
+                current_music.append(os.path.basename(song.get('musicFilename', '')))
+                
+    # 変換とメタ更新
+    pl['type'] = 'normal'
+    if 'conditions' in pl:
+        del pl['conditions']
+    save_playlist_master(master)
+    
+    # 削除と個別JSONへの保存
+    new_music = [m for m in current_music if m not in filenames]
+    songs_path = os.path.join(PLAYLIST_DIR, f"{pl_id}.json")
+    with open(songs_path, 'w', encoding='utf-8') as f:
+        json.dump(new_music, f, indent=4, ensure_ascii=False)
         
-        # 通常プレイリストに変換
-        pl['type'] = 'normal'
-        # ルール（条件）を削除
-        if 'conditions' in pl:
-            del pl['conditions']
-        
-        # 楽曲を削除
-        current_music = pl.get('music', [])
-        new_music = [m for m in current_music if m not in filenames]
-        pl['music'] = new_music
-        
-        # 保存
-        with open(path, 'w', encoding='utf-8') as f:
-            json.dump(pl, f, indent=4, ensure_ascii=False)
-            
-        return get_playlist_details(pl_id)
-    except Exception as e:
-        print(f"Conversion Error: {e}")
-        return None
+    return get_playlist_details(pl_id)
 
 @eel.expose
 def update_smart_playlist(pl_id, name, conditions):
-    """既存のスマートプレイリストのルールと名前を更新し、楽曲を再抽出する"""
-    path = os.path.join(PLAYLIST_DIR, f"{pl_id}.json")
-    if not os.path.exists(path): return None
-    with open(path, 'r', encoding='utf-8') as f:
-        pl = json.load(f)
+    """既存のスマートプレイリストのルールと名前を更新"""
+    master = load_playlist_master()
+    pl = next((p for p in master if p.get('id') == pl_id), None)
+    if not pl: return None
+    
     pl['playlistName'] = name
     pl['conditions'] = conditions
-    db = load_db()
-    matched_filenames = []
-    for song in db:
-        if evaluate_smart_rules(song, conditions):
-            matched_filenames.append(os.path.basename(song.get('musicFilename', '')))
-    pl['music'] = matched_filenames
-    with open(path, 'w', encoding='utf-8') as f:
-        json.dump(pl, f, indent=4, ensure_ascii=False)
+    save_playlist_master(master)
+    
     return get_playlist_details(pl_id)
 
 @eel.expose

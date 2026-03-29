@@ -34,6 +34,7 @@
     text-align: center;
     display: flex;
     flex-direction: column;
+    /* ウィンドウサイズを最大値として制限 */
     max-width: 95vw;
     max-height: 95vh;
     box-sizing: border-box;
@@ -122,10 +123,12 @@
     right: 100%;
 }
 
-/* --- 曲選択モーダル --- */
+/* --- 曲選択モーダル (可変幅対応) --- */
 .song-select-modal {
-    width: 1000px;
-    height: 90vh; 
+    width: fit-content;    /* ★コンテンツの幅に合わせる */
+    min-width: 600px;      /* ★最低限の幅を確保 */
+    max-width: 95vw;       /* ★画面幅の95%を最大とする */
+    height: 90vh;          /* 画面高さの9割 */
     text-align: left;
 }
 
@@ -138,7 +141,7 @@
     background: var(--card-bg); 
     flex-shrink: 0;
 }
-.modal-header h3 { margin: 0; font-size: 1.1rem; color: var(--text-main); }
+.modal-header h3 { margin-right: 20px; font-size: 1.1rem; color: var(--text-main); white-space: nowrap; }
 
 .search-input {
     padding: 8px 12px;
@@ -154,27 +157,51 @@
 
 .song-select-list {
     flex: 1;
-    overflow-y: auto;
+    overflow: auto;        /* ★縦横両方のスクロールを有効化 */
     position: relative;
     user-select: none;
     background: var(--card-bg); 
     min-height: 0; 
 }
 
-.select-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+/* テーブルの調整 */
+.select-table { 
+    width: 100%; 
+    border-collapse: collapse; 
+    table-layout: auto; 
+}
+
 .select-table th {
-    position: sticky; top: 0; background: var(--bg-color); padding: 10px; 
-    font-size: 0.85rem; color: var(--text-sub); text-align: left;
-    border-bottom: 1px solid rgba(128, 128, 128, 0.2); z-index: 5; cursor: pointer; 
+    position: sticky; 
+    top: 0; 
+    background-color: var(--bg-color); 
+    padding: 12px 10px; 
+    font-size: 0.85rem; 
+    color: var(--text-sub); 
+    text-align: left;
+    border-bottom: 1px solid rgba(128, 128, 128, 0.2); 
+    z-index: 10; 
+    white-space: nowrap;
 }
+
 .select-table td {
-    padding: 8px 10px; border-bottom: 1px solid rgba(128, 128, 128, 0.1); 
-    color: var(--text-main); font-size: 0.9rem; vertical-align: middle;
+    padding: 10px; 
+    border-bottom: 1px solid rgba(128, 128, 128, 0.1); 
+    color: var(--text-main); 
+    font-size: 0.9rem; 
+    vertical-align: middle;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    /* セルの最大幅制限を緩和 */
+    max-width: 500px;
 }
+
 .select-row.selected { background-color: rgba(var(--primary-color-rgb, 79, 70, 229), 0.1); } 
 .select-row:hover { background-color: rgba(128, 128, 128, 0.05); } 
+
 .chk-cell { width: 40px; text-align: center; }
-.col-check-box { width: 16px; height: 16px; accent-color: var(--primary-color); cursor: pointer; pointer-events: none; }
+.col-check-box { width: 16px; height: 16px; accent-color: var(--primary-color); cursor: pointer; }
 .col-art-small { width: 50px; text-align: center; }
 .col-art-small img { width: 32px; height: 32px; border-radius: 4px; object-fit: cover; background: var(--bg-color); } 
 
@@ -298,7 +325,6 @@
     flex-shrink: 0;
 }
 
-/* ★ 選択肢の背景色を固定 */
 .smart-tag-select option, .smart-op-select option {
     background-color: var(--card-bg) !important;
     color: var(--text-main) !important;

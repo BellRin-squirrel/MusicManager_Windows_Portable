@@ -11,7 +11,15 @@
             document.getElementById('btnPlayAll').addEventListener('click', () => window.PlayerController.startPlaybackSession('normal'));
             document.getElementById('btnShuffleAll').addEventListener('click', () => window.PlayerController.startPlaybackSession('shuffle'));
             
-            // リスト外クリックで選択解除
+            const btnEditRules = document.createElement('button');
+            btnEditRules.id = 'btnEditRules';
+            btnEditRules.className = 'btn-edit-rules';
+            btnEditRules.textContent = 'ルールを編集';
+            btnEditRules.onclick = () => {
+                const plData = s.playlists[s.currentPlaylistIndex];
+                if (window.SidebarController) window.SidebarController.openSmartPlaylistModal(plData);
+            };
+
             document.addEventListener('click', (e) => {
                 const isClickInTable = e.target.closest('.song-table tr');
                 const isClickInMenu = e.target.closest('.context-menu');
@@ -29,7 +37,6 @@
             const modal = document.getElementById('songInfoModal');
             const btnClose = document.getElementById('btnCloseInfo');
             if (btnClose) btnClose.onclick = () => modal.classList.remove('show');
-
             const tabs = modal.querySelectorAll('.tab-btn');
             tabs.forEach(btn => {
                 btn.onclick = () => {
@@ -91,11 +98,34 @@
             modal.classList.add('show');
         },
 
-        selectPlaylist: function(index) {
+        // ★修正: 遅延ロードロジックを追加
+        selectPlaylist: async function(index) {
+            if (index === -1 || !s.playlists[index]) return;
+
             document.querySelectorAll('.playlist-item').forEach(el => el.classList.remove('active'));
             s.currentPlaylistIndex = index;
             this.clearSelection(); 
             window.SidebarController.renderSidebar(); 
+
+            const pl = s.playlists[index];
+
+            // まだ一度も読み込まれていなければ Python から取得
+            if (pl.songs === null) {
+                u.showLoading();
+                try {
+                    u.updateLoadingProgress(0, 0, `「${pl.playlistName}」を読み込み中...`);
+                    const details = await eel.get_playlist_details(pl.id)();
+                    if (details) {
+                        s.playlists[index] = details; // キャッシュに保存
+                    }
+                } catch (e) {
+                    console.error(e);
+                    u.showToast("プレイリストの読み込みに失敗しました", true);
+                } finally {
+                    u.hideLoading();
+                }
+            }
+
             this.renderMainView();
         },
 
@@ -130,7 +160,7 @@
         getSelectedSongs: function() {
             if (s.currentPlaylistIndex === -1) return [];
             const pl = s.playlists[s.currentPlaylistIndex];
-            const sortedSongs = u.sortSongs(pl.songs, pl.sortBy);
+            const sortedSongs = u.sortSongs(pl.songs, pl.sortBy, pl.sortDesc);
             return Array.from(this.selectedTrackIndices).map(idx => sortedSongs[idx]);
         },
 
@@ -160,6 +190,8 @@
                     li.onclick = async () => {
                         const songs = this.getSelectedSongs().map(song => song.musicFilename.split(/[\\/]/).pop());
                         const res = await eel.add_songs_to_playlist(p.id, songs)();
+                        // 追加された側が現在開いているプレイリストなら、そちらもキャッシュをクリアするか更新する必要があるが、
+                        // ここでは簡易的にトースト通知のみ
                         if (res) u.showToast(`「${p.playlistName}」に追加しました`, false);
                     };
                     ul.appendChild(li);
@@ -212,11 +244,12 @@
         },
 
         renderMainView: async function() {
-            if (s.currentPlaylistIndex === -1 || !s.playlists[s.currentPlaylistIndex]) return;
+            if (s.currentPlaylistIndex === -1 || !s.playlists[s.currentPlaylistIndex] || s.playlists[s.currentPlaylistIndex].songs === null) return;
             if (!this.playerSettings) this.playerSettings = await eel.get_app_settings()();
 
             const plData = s.playlists[s.currentPlaylistIndex];
-            const songs = u.sortSongs(plData.songs, plData.sortBy);
+            const isDesc = plData.sortDesc === true;
+            const songs = u.sortSongs(plData.songs, plData.sortBy, isDesc);
             const visibleTags = this.playerSettings.player_visible_tags || ['title', 'artist', 'album'];
             
             document.getElementById('currentPlaylistTitle').textContent = plData.playlistName;
@@ -231,34 +264,61 @@
             });
             document.getElementById('currentPlaylistDuration').textContent = u.formatTotalDuration(totalSec);
 
-            // --- ソートUIの構築 ---
             const sortArea = document.getElementById('phSortArea');
-            sortArea.innerHTML = '<span class="ph-sort-label">並び替え:</span>';
+            sortArea.innerHTML = '';
+            let btnEdit = document.getElementById('btnEditRules');
+            if (!btnEdit) {
+                btnEdit = document.createElement('button');
+                btnEdit.id = 'btnEditRules';
+                btnEdit.className = 'btn-edit-rules';
+                btnEdit.textContent = 'ルールを編集';
+                btnEdit.onclick = () => {
+                    const plData = s.playlists[s.currentPlaylistIndex];
+                    if (window.SidebarController) window.SidebarController.openSmartPlaylistModal(plData);
+                };
+            }
+            btnEdit.style.display = (plData.type === 'smart') ? 'inline-block' : 'none';
+            sortArea.appendChild(btnEdit);
+
+            const sortLabel = document.createElement('span');
+            sortLabel.className = 'ph-sort-label';
+            sortLabel.textContent = '並び替え:';
+            sortArea.appendChild(sortLabel);
+
             const sortSelect = document.createElement('select');
             sortSelect.className = 'ph-sort-select';
-            
-            // 選択肢の生成
             const allTags = await eel.get_available_tags()();
             const sortTags = allTags.filter(t => this.playerSettings.active_tags.includes(t.key));
-            
             sortTags.forEach(tag => {
                 const opt = document.createElement('option');
                 opt.value = tag.key; opt.textContent = tag.label;
                 if (plData.sortBy === tag.key) opt.selected = true;
                 sortSelect.appendChild(opt);
             });
-
             sortSelect.onchange = async (e) => {
                 const newSort = e.target.value;
                 plData.sortBy = newSort;
-                // Python側に保存
                 await eel.update_playlist_by_id(plData.id, 'sortBy', newSort)();
-                this.renderMainView(); // 再描画
+                this.renderMainView(); 
             };
             sortArea.appendChild(sortSelect);
 
-            const btnEdit = document.getElementById('btnEditRules');
-            if (btnEdit) btnEdit.style.display = (plData.type === 'smart') ? 'inline-block' : 'none';
+            const orderSelect = document.createElement('select');
+            orderSelect.className = 'ph-sort-select';
+            const optAsc = document.createElement('option');
+            optAsc.value = "asc"; optAsc.textContent = "昇順";
+            const optDesc = document.createElement('option');
+            optDesc.value = "desc"; optDesc.textContent = "降順";
+            if (isDesc) optDesc.selected = true; else optAsc.selected = true;
+            orderSelect.appendChild(optAsc);
+            orderSelect.appendChild(optDesc);
+            orderSelect.onchange = async (e) => {
+                const isDescending = (e.target.value === "desc");
+                plData.sortDesc = isDescending;
+                await eel.update_playlist_by_id(plData.id, 'sortDesc', isDescending)();
+                this.renderMainView();
+            };
+            sortArea.appendChild(orderSelect);
 
             const cover = document.getElementById('playlistCoverArt');
             if (songs.length>0 && songs[0].imageData) cover.src = songs[0].imageData;
@@ -273,7 +333,6 @@
                 const isPlaying = window.PlayerController.isSongPlaying(song);
                 if (isPlaying) tr.classList.add('current-playing');
                 if (this.selectedTrackIndices.has(idx)) tr.classList.add('selected');
-
                 const artSrc = song.imageData || s.DEFAULT_ICON;
                 let rowHtml = `
                     <td class="col-status">${isPlaying ? s.ICON_PLAYING : ''}</td>
@@ -290,7 +349,6 @@
                 });
                 rowHtml += `<td class="col-time">${song.duration}</td>`;
                 tr.innerHTML = rowHtml;
-
                 tr.onclick = (e) => this.handleRowClick(idx, e);
                 tr.oncontextmenu = (e) => {
                     e.preventDefault();

@@ -145,32 +145,37 @@
         loadPlaylists: async function() {
             u.showLoading();
             try {
+                // 設定を取得
+                const settings = await eel.get_app_settings()();
+                
                 u.updateLoadingProgress(0, 0, "楽曲一覧を取得中...");
-                s.fullLibrary = await eel.get_library_data_with_meta(false)();
+                s.fullLibrary = await eel.get_library_data_with_meta(true)();
 
                 u.updateLoadingProgress(0, 0, "プレイリスト一覧を取得中...");
                 const summaries = await eel.get_playlist_summaries()();
                 summaries.sort((a, b) => (a.playlistName||"").toLowerCase().localeCompare((b.playlistName||"").toLowerCase(), 'ja'));
-                s.playlists = summaries;
                 
-                window.SidebarController.renderSidebar();
+                s.playlists = summaries.map(pl => ({...pl, songs: null}));
 
-                const total = s.playlists.length;
-                for (let i = 0; i < total; i++) {
-                    const pl = s.playlists[i];
-                    u.updateLoadingProgress(i + 1, total, "プレイリスト一覧を取得中...");
-                    const details = await eel.get_playlist_details(pl.id)();
-                    if (details) {
-                        s.playlists[i] = details;
-                        if (s.currentPlaylistIndex === i) {
-                            window.MainViewController.renderMainView();
+                // ★ 設定が「遅延読み込みオフ（事前読み込みオン）」の場合
+                if (!settings.lazy_load_playlists) {
+                    const total = s.playlists.length;
+                    for (let i = 0; i < total; i++) {
+                        const pl = s.playlists[i];
+                        u.updateLoadingProgress(i + 1, total, `「${pl.playlistName}」を読み込み中...`);
+                        const details = await eel.get_playlist_details(pl.id)();
+                        if (details) {
+                            s.playlists[i] = details;
                         }
+                    }
+                    
+                    // すべて読み込んだので最初のプレイリストを表示
+                    if (s.playlists.length > 0) {
+                        window.MainViewController.selectPlaylist(0);
                     }
                 }
 
-                if (s.currentPlaylistIndex === -1 && s.playlists.length > 0) {
-                    window.MainViewController.selectPlaylist(0);
-                }
+                window.SidebarController.renderSidebar();
 
             } catch (e) { 
                 console.error("Load Error:", e); 
@@ -232,7 +237,7 @@
             li.className = 'playlist-item';
             const iconSvg = type === 'smart' ? 
                 `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width:20px;height:20px;"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" /></svg>` :
-                `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width:20px;height:20px;"><path stroke-linecap="round" stroke-linejoin="round" d="M9 9l10.5-3m0 6.553v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66a2.25 2.25 0 001.632-2.163zm0 0V2.25L9 5.25v10.303m0 0v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66a2.25 2.25 0 001.632-2.163z" /></svg>`;
+                `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width:20px;height:20px;"><path stroke-linecap="round" stroke-linejoin="round" d="M9 9l10.5-3m0 6.553v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66a2.25 2.25 0 001.632-2.163zm0 0V2.25L9 5.25v10.303m0 0v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66a2.25 2.25 0 001.632-2.163zm0 0V2.25L9 5.25v10.303m0 0v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66a2.25 2.25 0 001.632-2.163z" /></svg>`;
             
             li.innerHTML = iconSvg;
             const input = document.createElement('input');
@@ -493,10 +498,12 @@
             const plId = s.playlists[index].id;
             const updatedPl = await eel.update_playlist_by_id(plId, 'playlistName', newName)(); 
             if (updatedPl) {
-                s.playlists[index] = updatedPl;
+                s.playlists[index].playlistName = updatedPl.playlistName; 
                 s.playlists.sort((a, b) => (a.playlistName||"").toLowerCase().localeCompare((b.playlistName||"").toLowerCase(), 'ja'));
                 window.SidebarController.renderSidebar();
-                window.MainViewController.selectPlaylist(s.playlists.findIndex(p => p.id === plId));
+                const newIdx = s.playlists.findIndex(p => p.id === plId);
+                s.currentPlaylistIndex = newIdx;
+                window.SidebarController.renderSidebar();
             }
             window.SidebarController.hideSaving();
             u.showToast("更新しました", false);

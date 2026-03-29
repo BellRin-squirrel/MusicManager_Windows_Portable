@@ -83,6 +83,7 @@
     font-size: 0.8rem;
     font-weight: 700;
     color: var(--text-sub);
+    margin-left: 6px;
 }
 
 .ph-sort-select {
@@ -97,7 +98,6 @@
     font-family: inherit;
 }
 
-/* ★ 選択肢の背景色を最初から固定 */
 .ph-sort-select option {
     background-color: var(--card-bg) !important;
     color: var(--text-main) !important;

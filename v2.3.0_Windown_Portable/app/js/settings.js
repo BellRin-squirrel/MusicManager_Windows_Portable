@@ -4,7 +4,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const btnRestoreArt = document.getElementById('btnRestoreArt');
     const chkNewWindow = document.getElementById('openPlayerNewWindow');
     const chkManageNewWindow = document.getElementById('openManageNewWindow');
-    const chkDevMode = document.getElementById('developerMode'); // デベロッパーモード
+    const chkDevMode = document.getElementById('developerMode'); 
+    const chkLazyLoad = document.getElementById('lazyLoadPlaylists'); // ★追加
     const itemsPerPage = document.getElementById('itemsPerPage');
     const primaryColor = document.getElementById('primaryColor');
 
@@ -50,6 +51,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     chkNewWindow.checked = settings.open_player_new_window;
     chkManageNewWindow.checked = settings.open_manage_new_window;
     chkDevMode.checked = settings.developer_mode;
+    chkLazyLoad.checked = settings.lazy_load_playlists; // ★セット
     primaryColor.value = settings.primary_color;
 
     function rebuildThemeOptions(selectedMode) {
@@ -108,6 +110,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             open_player_new_window: chkNewWindow.checked,
             open_manage_new_window: chkManageNewWindow.checked,
             developer_mode: chkDevMode.checked,
+            lazy_load_playlists: chkLazyLoad.checked, // ★追加
             primary_color: primaryColor.value,
             theme_mode: themeMode.value,
             background_color: backgroundColor.value,
@@ -134,10 +137,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // デベロッパーモードの特別制御
     chkDevMode.addEventListener('click', (e) => {
         if (chkDevMode.checked) {
-            e.preventDefault(); // 一旦チェックを止める
+            e.preventDefault(); 
             devWarningModal.style.display = 'flex';
         } else {
             saveAllSettings();
@@ -156,7 +158,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         devWarningModal.style.display = 'none';
     });
 
-    [itemsPerPage, chkNewWindow, chkManageNewWindow, primaryColor, backgroundColor, subBackgroundColor, textColor].forEach(el => {
+    // 各要素の変更で自動保存
+    [itemsPerPage, chkNewWindow, chkManageNewWindow, chkLazyLoad, primaryColor, backgroundColor, subBackgroundColor, textColor].forEach(el => {
         el.addEventListener('change', saveAllSettings);
     });
 
@@ -206,8 +209,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         availableTags.forEach(tag => {
             const li = document.createElement('li');
             li.className = 'tag-item';
-            const isDbChecked = settings.active_tags.includes(tag.key) ? 'checked' : '';
-            const isPlayerChecked = settings.player_visible_tags.includes(tag.key) ? 'checked' : '';
+            const isDbChecked = currentSettings.active_tags.includes(tag.key) ? 'checked' : '';
+            const isPlayerChecked = currentSettings.player_visible_tags.includes(tag.key) ? 'checked' : '';
             li.innerHTML = `
                 <div class="handle disabled">${tag.label}</div>
                 <div class="check-container"><label class="toggle-switch"><input type="checkbox" class="chk-db" value="${tag.key}" ${isDbChecked}><span class="slider"></span></label></div>

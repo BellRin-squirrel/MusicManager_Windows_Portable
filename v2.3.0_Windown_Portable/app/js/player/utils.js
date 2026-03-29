@@ -11,7 +11,6 @@ window.PlayerUtils = {
         if(overlay) overlay.style.display = 'none';
     },
     
-    // テキスト形式での進捗更新
     updateLoadingProgress: function(current, total, headerMsg) {
         const headEl = document.getElementById('loadingHeaderText');
         const detailEl = document.getElementById('loadingDetailText');
@@ -53,14 +52,29 @@ window.PlayerUtils = {
         }
         return array;
     },
-    sortSongs: function(songs, sortBy) {
+    // ★修正: sortDesc引数を追加し、数値と文字列で適切にソート方向を反転させる
+    sortSongs: function(songs, sortBy, sortDesc = false) {
         if (!songs || !Array.isArray(songs)) return [];
 
         const list = [...songs];
         list.sort((a, b) => {
-            const valA = String(a[sortBy] || ''); 
-            const valB = String(b[sortBy] || '');
-            return valA.localeCompare(valB, 'ja');
+            let valA = a[sortBy] || ''; 
+            let valB = b[sortBy] || '';
+            
+            // 数値として扱う項目
+            if (['track', 'year', 'disc', 'bpm'].includes(sortBy)) {
+                valA = parseInt(valA) || 0;
+                valB = parseInt(valB) || 0;
+                if (valA < valB) return sortDesc ? 1 : -1;
+                if (valA > valB) return sortDesc ? -1 : 1;
+                return 0;
+            } else {
+                // 文字列として扱う項目
+                valA = String(valA);
+                valB = String(valB);
+                const comp = valA.localeCompare(valB, 'ja');
+                return sortDesc ? -comp : comp;
+            }
         });
         return list;
     }

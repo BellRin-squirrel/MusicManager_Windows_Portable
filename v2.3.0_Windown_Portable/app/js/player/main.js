@@ -10,7 +10,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         // 起動時の表示調整
         const settings = await eel.get_app_settings()();
         
-        // ★設定が「新しいウィンドウで開く」がONの場合、「トップへ」ボタンを隠す
         if (settings.open_player_new_window) {
             const backLinkArea = document.querySelector('.header-left');
             if (backLinkArea) {
@@ -18,10 +17,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         }
 
-        // v1.0.0-beta3: 旧形式の歌詞データがあれば移行を実行
+        // 歌詞データの移行（v1.0.0-beta3互換）
         await eel.migrate_lyrics_to_db()();
 
-        // データの読み込み
+        // プレイリストの基本情報のみを読み込む（楽曲リストは読み込まない）
         await window.SidebarController.loadPlaylists();
 
     } catch (e) {
